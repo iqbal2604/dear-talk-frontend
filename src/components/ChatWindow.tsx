@@ -24,14 +24,16 @@ interface ChatWindowProps {
 const PAGE_SIZE = 50;
 
 export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) {
+  const roomId = Number(room.id); // ← normalize sekali, pakai di semua tempat
+
   const user = useAuthStore((s) => s.user);
-  const roomMessages = useChatStore((s) => s.messages[room.id] || []);
-  const setMessages = useChatStore((s) => s.setMessages);
-  const addMessage = useChatStore((s) => s.addMessage);
+  const roomMessages = useChatStore((s) => s.messages[roomId] || []);
+  const setMessages  = useChatStore((s) => s.setMessages);
+  const addMessage   = useChatStore((s) => s.addMessage);
   const updateMessage = useChatStore((s) => s.updateMessage);
   const removeMessage = useChatStore((s) => s.removeMessage);
-  const typing = useChatStore((s) => s.typing);
-  const onlineUsers = useChatStore((s) => s.onlineUsers);
+  const typing       = useChatStore((s) => s.typing);
+  const onlineUsers  = useChatStore((s) => s.onlineUsers);
   const toast = useToast();
 
   const [input, setInput] = useState('');
@@ -59,9 +61,9 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
   const otherMember = !isGroup ? room.members?.find((m) => Number(m.user_id) !== Number(user?.id)) : null;
   const isOtherOnline = otherMember ? onlineUsers.has(Number(otherMember.user_id)) : false;
 
-  const typingUsers = typing[room.id]
-    ? Object.entries(typing[room.id])
-        .filter(([uid, isTyping]: [string, boolean]) => isTyping && Number(uid) !== user?.id)
+  const typingUsers = typing[roomId]
+    ? Object.entries(typing[roomId])
+        .filter(([uid, isTyping]: [string, boolean]) => isTyping && Number(uid) !== Number(user?.id))
         .map(([uid]: [string, boolean]) =>
           room.members?.find((m) => Number(m.user_id) === Number(uid))?.user?.username || 'Seseorang'
         )
@@ -74,22 +76,22 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
     setHasMore(true);
     msgRefs.current = {};
     roomApi
-      .getMessages(room.id, 1, PAGE_SIZE)
+      .getMessages(roomId, 1, PAGE_SIZE)
       .then((res) => {
         const data = res.data || [];
-        setMessages(room.id, data);
+        setMessages(roomId, data);
         setHasMore(data.length === PAGE_SIZE);
       })
       .catch(() => toast.error('Gagal memuat pesan'))
       .finally(() => setLoadingMsgs(false));
-  }, [room.id]);
+  }, [roomId]);
 
   // ── Mark as read ────────────────────────────────────────────
   useEffect(() => {
-    roomApi.markRead(room.id).catch(console.error);
-  }, [room.id, roomMessages.length]);
+    roomApi.markRead(roomId).catch(console.error);
+  }, [roomId, roomMessages.length]);
 
-  // ── Scroll to bottom on new message (only when near bottom) ─
+  // ── Scroll to bottom on new message ─────────────────────────
   useEffect(() => {
     if (!showScrollBottom) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -114,12 +116,12 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
       const prevScrollHeight = el.scrollHeight;
       setLoadingMore(true);
       roomApi
-        .getMessages(room.id, nextPage, PAGE_SIZE)
+        .getMessages(roomId, nextPage, PAGE_SIZE)
         .then((res) => {
           const older = res.data || [];
           if (older.length < PAGE_SIZE) setHasMore(false);
           if (older.length > 0) {
-            setMessages(room.id, [...older, ...roomMessages]);
+            setMessages(roomId, [...older, ...roomMessages]);
             setPage(nextPage);
             requestAnimationFrame(() => {
               if (messagesAreaRef.current) {
@@ -132,7 +134,7 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
         .catch(() => toast.error('Gagal memuat pesan lama'))
         .finally(() => setLoadingMore(false));
     }
-  }, [loadingMore, hasMore, page, roomMessages, room.id]);
+  }, [loadingMore, hasMore, page, roomMessages, roomId]);
 
   // ── Typing indicator ────────────────────────────────────────
   const handleInputChange = (value: string) => {
@@ -141,9 +143,9 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
       inputRef.current.style.height = 'auto';
       inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 120) + 'px';
     }
-    onSendTyping(room.id, true);
+    onSendTyping(roomId, true);
     clearTimeout(typingTimerRef.current);
-    typingTimerRef.current = setTimeout(() => onSendTyping(room.id, false), 1500);
+    typingTimerRef.current = setTimeout(() => onSendTyping(roomId, false), 1500);
   };
 
   // ── Send / Edit ─────────────────────────────────────────────
@@ -154,7 +156,7 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
     if (editingMsg) {
       try {
         const res = await messageApi.edit(editingMsg.id, { content });
-        updateMessage(room.id, res.data);
+        updateMessage(roomId, res.data);
         setEditingMsg(null);
         setInput('');
         if (inputRef.current) inputRef.current.style.height = 'auto';
@@ -169,9 +171,9 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
     setInput('');
     if (inputRef.current) inputRef.current.style.height = 'auto';
     try {
-      const res = await roomApi.sendMessage(room.id, { content, type: 'text' });
-      addMessage(room.id, res.data);
-      onSendTyping(room.id, false);
+      const res = await roomApi.sendMessage(roomId, { content, type: 'text' });
+      addMessage(roomId, res.data);
+      onSendTyping(roomId, false);
       setShowScrollBottom(false);
     } catch {
       toast.error('Gagal mengirim pesan');
@@ -179,7 +181,7 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
     } finally {
       setSending(false);
     }
-  }, [input, sending, editingMsg, room.id, toast]);
+  }, [input, sending, editingMsg, roomId, toast]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -193,7 +195,7 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
     setContextMenu(null);
     try {
       await messageApi.delete(msg.id);
-      removeMessage(room.id, msg.id);
+      removeMessage(roomId, msg.id);
       toast.success('Pesan dihapus');
     } catch {
       toast.error('Gagal menghapus pesan');
@@ -275,7 +277,7 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
       {/* ── Search panel ───────────────────────────── */}
       {showSearch && (
         <SearchPanel
-          roomId={room.id}
+          roomId={roomId}
           onClose={() => setShowSearch(false)}
           onJumpTo={handleJumpTo}
         />
@@ -306,7 +308,7 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
                 const prevMsg = msgs[idx - 1];
                 const showAvatar =
                   isGroup && !isOwn &&
-                  (!prevMsg || prevMsg.sender_id !== msg.sender_id);
+                  (!prevMsg || Number(prevMsg.sender_id) !== Number(msg.sender_id));
                 const isHighlighted = msg.id === highlightMsgId;
 
                 return (
@@ -348,7 +350,11 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
                       {isGroup && !isOwn && showAvatar && (
                         <button
                           className="message-sender-name"
-                          style={{ color: getAvatarColor(msg.sender?.username || ''), background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                          style={{
+                            color: getAvatarColor(msg.sender?.username || ''),
+                            background: 'none', border: 'none',
+                            padding: 0, cursor: 'pointer', textAlign: 'left',
+                          }}
                           onClick={() => setViewingUserId(Number(msg.sender_id))}
                         >
                           {msg.sender?.username}
@@ -461,7 +467,6 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Lihat profil untuk semua pesan */}
           {Number(contextMenu.msg.sender_id) !== Number(user?.id) && (
             <button onClick={() => {
               setViewingUserId(Number(contextMenu.msg.sender_id));
@@ -470,7 +475,6 @@ export function ChatWindow({ room, onSendTyping, onInfoOpen }: ChatWindowProps) 
               👤 Lihat Profil
             </button>
           )}
-          {/* Edit & hapus hanya untuk pesan sendiri */}
           {Number(contextMenu.msg.sender_id) === Number(user?.id) && (
             <>
               <button onClick={() => {
